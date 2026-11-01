@@ -53,26 +53,108 @@ test("position tolerance is opt-in", () => {
 
   expect(isRouteViaCoveredByPhysicalVia(via, nearbyRoute)).toBe(false)
   expect(
-    isRouteViaCoveredByPhysicalVia(via, nearbyRoute, {
+    isRouteViaCoveredByPhysicalVia({
+      physicalVia: via,
+      routeVia: nearbyRoute,
       positionTolerance: 1e-6,
     }),
   ).toBe(true)
 })
 
-test.each([
-  ["positive tolerance boundary", { x: 1e-6 }, true],
-  ["negative tolerance boundary", { y: -1e-6 }, true],
-  ["outside x tolerance", { x: 1.5e-6 }, false],
-  ["outside y tolerance", { y: -1.5e-6 }, false],
-  ["different outer diameter", { x: 1e-10, outer_diameter: 0.8 }, false],
-  ["different hole diameter", { x: 1e-10, hole_diameter: 0.4 }, false],
-  ["outside physical span", { x: 1e-10, to_layer: "inner3" }, false],
-] as const)("position tolerance respects %s", (_, difference, covered) => {
+test("named options preserve exact matching by default", () => {
+  const nearbyRoute = { ...routeVia, y: 2 + Number.EPSILON * 2 }
+
+  expect(isRouteViaCoveredByPhysicalVia({ physicalVia: via, routeVia })).toBe(
+    true,
+  )
   expect(
-    isRouteViaCoveredByPhysicalVia(
-      { ...via, x: 0, y: 0, layers: ["top", "inner1", "inner2"] },
-      { ...routeVia, x: 0, y: 0, ...difference },
-      { positionTolerance: 1e-6 },
-    ),
-  ).toBe(covered)
+    isRouteViaCoveredByPhysicalVia({ physicalVia: via, routeVia: nearbyRoute }),
+  ).toBe(false)
+  expect(
+    isRouteViaCoveredByPhysicalVia({
+      physicalVia: via,
+      routeVia: nearbyRoute,
+      positionTolerance: 0,
+    }),
+  ).toBe(false)
+})
+
+test.each([
+  {
+    scenario: "positive tolerance boundary",
+    routeDifference: { x: 1e-6 },
+    expectedCoverage: true,
+  },
+  {
+    scenario: "negative tolerance boundary",
+    routeDifference: { y: -1e-6 },
+    expectedCoverage: true,
+  },
+  {
+    scenario: "diagonal tolerance boundary",
+    routeDifference: { x: 1e-6, y: -1e-6 },
+    expectedCoverage: true,
+  },
+  {
+    scenario: "outside x tolerance",
+    routeDifference: { x: 1.5e-6 },
+    expectedCoverage: false,
+  },
+  {
+    scenario: "outside y tolerance",
+    routeDifference: { y: -1.5e-6 },
+    expectedCoverage: false,
+  },
+  {
+    scenario: "different outer diameter",
+    routeDifference: { x: 1e-10, outer_diameter: 0.8 },
+    expectedCoverage: false,
+  },
+  {
+    scenario: "different hole diameter",
+    routeDifference: { x: 1e-10, hole_diameter: 0.4 },
+    expectedCoverage: false,
+  },
+  {
+    scenario: "outside physical span",
+    routeDifference: { x: 1e-10, to_layer: "inner3" },
+    expectedCoverage: false,
+  },
+])(
+  "position tolerance respects $scenario",
+  ({ routeDifference, expectedCoverage }) => {
+    expect(
+      isRouteViaCoveredByPhysicalVia({
+        physicalVia: {
+          ...via,
+          x: 0,
+          y: 0,
+          layers: ["top", "inner1", "inner2"],
+        },
+        routeVia: { ...routeVia, x: 0, y: 0, ...routeDifference },
+        positionTolerance: 1e-6,
+      }),
+    ).toBe(expectedCoverage)
+  },
+)
+
+test("tolerant coverage accepts frozen vias without changing their positions", () => {
+  const physicalVia = Object.freeze({
+    ...via,
+    layers: Object.freeze([...via.layers]),
+  })
+  const nearbyRoute = Object.freeze({
+    ...routeVia,
+    y: 2 + Number.EPSILON * 2,
+  })
+
+  expect(
+    isRouteViaCoveredByPhysicalVia({
+      physicalVia,
+      routeVia: nearbyRoute,
+      positionTolerance: 1e-6,
+    }),
+  ).toBe(true)
+  expect(physicalVia.y).toBe(2)
+  expect(nearbyRoute.y).toBe(2 + Number.EPSILON * 2)
 })

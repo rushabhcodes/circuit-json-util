@@ -3,6 +3,17 @@ import type { PcbVia } from "circuit-json"
 type ViaGeometry = Pick<PcbVia, "x" | "y"> &
   Partial<Pick<PcbVia, "outer_diameter" | "hole_diameter">>
 
+type PhysicalViaGeometry = ViaGeometry & { layers?: readonly string[] }
+type RouteViaGeometry = ViaGeometry & {
+  from_layer?: string
+  to_layer?: string
+}
+type RouteViaCoverageOptions = {
+  physicalVia: PhysicalViaGeometry
+  routeVia: RouteViaGeometry
+  positionTolerance?: number
+}
+
 const getLayerDepth = (layer: string | undefined): number => {
   if (layer === "top") return 0
   if (layer === "bottom") return Number.POSITIVE_INFINITY
@@ -15,13 +26,30 @@ const getLayerDepth = (layer: string | undefined): number => {
  * with compatible dimensions. Callers must check electrical connectivity
  * separately. Missing route dimensions use the physical via's dimensions;
  * missing or unknown layers cannot establish coverage.
- * Position tolerance is measured per axis in mm and defaults to exact matching.
+ * Position tolerance is an inclusive limit per axis in mm, defaulting to zero.
+ * Use the named options object to opt in; two-argument calls remain exact.
+ * Neither input is modified.
  */
 export function isRouteViaCoveredByPhysicalVia(
-  physicalVia: ViaGeometry & { layers?: readonly string[] },
-  routeVia: ViaGeometry & { from_layer?: string; to_layer?: string },
-  { positionTolerance = 0 }: { positionTolerance?: number } = {},
+  options: RouteViaCoverageOptions,
+): boolean
+export function isRouteViaCoveredByPhysicalVia(
+  physicalVia: PhysicalViaGeometry,
+  routeVia: RouteViaGeometry,
+): boolean
+export function isRouteViaCoveredByPhysicalVia(
+  physicalViaOrOptions: PhysicalViaGeometry | RouteViaCoverageOptions,
+  legacyRouteVia?: RouteViaGeometry,
 ): boolean {
+  if (!("physicalVia" in physicalViaOrOptions)) {
+    if (!legacyRouteVia) return false
+    return isRouteViaCoveredByPhysicalVia({
+      physicalVia: physicalViaOrOptions,
+      routeVia: legacyRouteVia,
+    })
+  }
+
+  const { physicalVia, routeVia, positionTolerance = 0 } = physicalViaOrOptions
   const samePosition =
     Math.abs(physicalVia.x - routeVia.x) <= positionTolerance &&
     Math.abs(physicalVia.y - routeVia.y) <= positionTolerance
